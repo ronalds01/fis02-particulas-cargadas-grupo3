@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Simulación: Movimiento de una Partícula Cargada (Ley de Coulomb + Euler)</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --accent: #60a5fa;
+    --accent2: #f87171;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+  }
+  body {
+    margin: 0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px;
+  }
+  h1 { font-size: 1.3rem; margin-bottom: 4px; text-align: center; }
+  p.subtitle { color: var(--muted); margin-top: 0; margin-bottom: 16px; text-align: center; font-size: 0.9rem; }
+  .layout { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+  canvas {
+    background: #020617;
+    border-radius: 12px;
+    border: 1px solid #334155;
+  }
+  .panel {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 16px 20px;
+    min-width: 240px;
+    border: 1px solid #334155;
+  }
+  .panel h2 { font-size: 1rem; margin-top: 0; color: var(--accent); }
+  .row { display: flex; justify-content: space-between; margin: 6px 0; font-size: 0.9rem; }
+  .row span:last-child { font-weight: 600; }
+  button {
+    background: var(--accent);
+    border: none;
+    color: #0f172a;
+    font-weight: 600;
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin: 4px 4px 4px 0;
+    font-size: 0.85rem;
+  }
+  button.secondary { background: #334155; color: var(--text); }
+  button:hover { opacity: 0.85; }
+  .formula {
+    font-family: 'Courier New', monospace;
+    background: #0f172a;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    color: var(--accent);
+    margin: 4px 0;
+  }
+  footer { color: var(--muted); font-size: 0.75rem; margin-top: 18px; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>Movimiento de una Partícula Cargada usando Algoritmos de Simulación</h1>
+<p class="subtitle">Ley de Coulomb (F = kQq/r²) + Segunda Ley de Newton (a = F/m) + Integración de Euler (v, x)</p>
+
+<div class="layout">
+  <canvas id="canvas" width="620" height="480"></canvas>
+
+  <div class="panel">
+    <h2>Controles</h2>
+    <button id="toggleSign">Cambiar signo (atrae/repele)</button>
+    <button id="reset" class="secondary">Reiniciar</button>
+    <button id="pause" class="secondary">Pausar</button>
+
+    <h2>Ecuaciones del bucle</h2>
+    <div class="formula">F = k·|Q·q| / r²</div>
+    <div class="formula">a = F / m</div>
+    <div class="formula">v_nuevo = v + a·Δt</div>
+    <div class="formula">x_nuevo = x + v·Δt</div>
+
+    <h2>Estado en vivo</h2>
+    <div class="row"><span>Distancia r</span><span id="rVal">-</span></div>
+    <div class="row"><span>Fuerza F</span><span id="fVal">-</span></div>
+    <div class="row"><span>Aceleración a</span><span id="aVal">-</span></div>
+    <div class="row"><span>Velocidad |v|</span><span id="vVal">-</span></div>
+    <div class="row"><span>Tipo de interacción</span><span id="tipoVal">-</span></div>
+  </div>
+</div>
+
+<footer>Grupo 3 · Física II · Movimiento de partículas cargadas mediante algoritmos computacionales</footer>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+// Constante de Coulomb (escalada para que la simulación sea visible en pantalla)
+const k = 60000;
+
+// Carga fija (fuente) en el centro
+const source = { x: canvas.width / 2, y: canvas.height / 2, q: 8, radius: 16 };
+
+// Partícula móvil
+let particle = {
+  x: canvas.width / 2 + 200,
+  y: canvas.height / 2 - 100,
+  vx: 0,
+  vy: 10,
+  q: -4,        // negativa => atracción hacia la fuente positiva
+  m: 6,
+  radius: 8,
+  trail: []
+};
+
+const dt = 0.15;
+let paused = false;
+
+function resetParticle() {
+  particle = {
+    x: canvas.width / 2 + 200,
+    y: canvas.height / 2 - 100,
+    vx: 0,
+    vy: 10,
+    q: particle.q,
+    m: 6,
+    radius: 8,
+    trail: []
+  };
+}
+
+document.getElementById('toggleSign').addEventListener('click', () => {
+  particle.q *= -1;
+});
+document.getElementById('reset').addEventListener('click', resetParticle);
+document.getElementById('pause').addEventListener('click', (e) => {
+  paused = !paused;
+  e.target.textContent = paused ? 'Reanudar' : 'Pausar';
+});
+
+function step() {
+  // --- Vector de la fuente hacia la partícula ---
+  const dx = particle.x - source.x;
+  const dy = particle.y - source.y;
+  const r = Math.max(Math.sqrt(dx * dx + dy * dy), 20); // evita división entre ~0
+
+  // --- Ley de Coulomb: F = k|Qq|/r^2 ---
+  const Fmag = (k * Math.abs(source.q * particle.q)) / (r * r);
+
+  // Signo: opuestas se atraen (fuerza hacia la fuente), iguales se repelen (fuerza contraria)
+  const sign = (source.q * particle.q < 0) ? -1 : 1; // -1 atrae, +1 repele
+  const ux = dx / r;
+  const uy = dy / r;
+  const Fx = sign * Fmag * ux;
+  const Fy = sign * Fmag * uy;
+
+  // --- Segunda ley de Newton: a = F/m ---
+  const ax = Fx / particle.m;
+  const ay = Fy / particle.m;
+
+  // --- Integración de Euler: actualizar velocidad y posición ---
+  particle.vx += ax * dt;
+  particle.vy += ay * dt;
+  particle.x += particle.vx * dt;
+  particle.y += particle.vy * dt;
+
+  particle.trail.push({ x: particle.x, y: particle.y });
+  if (particle.trail.length > 250) particle.trail.shift();
+
+  // --- Panel de datos ---
+  document.getElementById('rVal').textContent = r.toFixed(1) + ' px';
+  document.getElementById('fVal').textContent = Fmag.toFixed(2) + ' N (esc.)';
+  document.getElementById('aVal').textContent = Math.sqrt(ax * ax + ay * ay).toFixed(2) + ' m/s²';
+  document.getElementById('vVal').textContent = Math.sqrt(particle.vx ** 2 + particle.vy ** 2).toFixed(2) + ' m/s';
+  document.getElementById('tipoVal').textContent = sign < 0 ? 'Atracción' : 'Repulsión';
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Estela
+  ctx.beginPath();
+  particle.trail.forEach((p, i) => {
+    if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+  });
+  ctx.strokeStyle = 'rgba(96,165,250,0.5)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Carga fuente
+  ctx.beginPath();
+  ctx.arc(source.x, source.y, source.radius, 0, Math.PI * 2);
+  ctx.fillStyle = '#f87171';
+  ctx.fill();
+  ctx.fillStyle = '#0f172a';
+  ctx.font = 'bold 16px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('+Q', source.x, source.y);
+
+  // Partícula móvil
+  ctx.beginPath();
+  ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+  ctx.fillStyle = particle.q < 0 ? '#60a5fa' : '#fbbf24';
+  ctx.fill();
+  ctx.fillStyle = '#0f172a';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(particle.q < 0 ? 'q-' : 'q+', particle.x, particle.y);
+}
+
+function loop() {
+  if (!paused) {
+    step();
+    draw();
+  }
+  requestAnimationFrame(loop);
+}
+
+draw();
+loop();
+</script>
+</body>
+</html>
