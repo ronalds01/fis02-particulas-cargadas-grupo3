@@ -69,6 +69,7 @@
 
 <h1>Movimiento de una Partícula Cargada usando Algoritmos de Simulación</h1>
 <p class="subtitle">Ley de Coulomb (F = kQq/r²) + Segunda Ley de Newton (a = F/m) + Integración de Euler (v, x)</p>
+<p class="subtitle" style="margin-top:-6px; font-size:0.8rem;">+Q = carga fuente (fija) &nbsp;·&nbsp; q = carga de prueba (móvil) &nbsp;·&nbsp; se reinicia sola si se aleja demasiado</p>
 
 <div class="layout">
   <canvas id="canvas" width="620" height="480"></canvas>
@@ -171,6 +172,17 @@ function step() {
 
   particle.trail.push({ x: particle.x, y: particle.y });
   if (particle.trail.length > 250) particle.trail.shift();
+
+  // --- Si la repulsión la manda muy lejos del canvas, reiniciar sola ---
+  // (evita que la demo se quede "vacía" en pleno examen/exposición)
+  const margin = 150;
+  if (
+    particle.x < -margin || particle.x > canvas.width + margin ||
+    particle.y < -margin || particle.y > canvas.height + margin
+  ) {
+    resetParticle();
+    return; // salta el resto de este frame, ya con la partícula reubicada
+  }
 
   // --- Panel de datos ---
   document.getElementById('rVal').textContent = r.toFixed(1) + ' px';
